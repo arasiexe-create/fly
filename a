@@ -6,18 +6,20 @@ local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local camera = workspace.CurrentCamera
 
--- 飛行設定用変数（最大値100兆）
+-- 飛行設定用変数（最大値1京）
 local isFlying = false
 local flySpeed = 50 
 local MIN_SPEED = 1
-local MAX_SPEED = 100000000000000 -- 100兆 (100,000,000,000,000)
+local MAX_SPEED = 1000000000000000 -- 1京 (1,000,000,000,000,000)
 
 local bodyGyro, bodyVelocity
 local keysDown = {}
 
--- 桁数が多いので見やすく略称化する関数 (100T = 100兆)
+-- 桁数が多いので見やすく略称化する関数 (1Q = 1京, 1T = 1兆)
 local function formatNumberShort(num)
-	if num >= 1000000000000 then
+	if num >= 1000000000000000 then
+		return string.format("%.2fQ", num / 1000000000000000)
+	elseif num >= 1000000000000 then
 		return string.format("%.2fT", num / 1000000000000)
 	elseif num >= 1000000000 then
 		return string.format("%.2fB", num / 1000000000)
@@ -101,8 +103,8 @@ local knobCorner = Instance.new("UICorner")
 knobCorner.CornerRadius = UDim.new(1, 0)
 knobCorner.Parent = sliderKnob
 
--- 初期ノブ位置 (9乗根カーブ)
-local initialPercent = math.pow((flySpeed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 1/9)
+-- 初期ノブ位置 (12乗根カーブ)
+local initialPercent = math.pow((flySpeed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 1/12)
 sliderKnob.Position = UDim2.new(initialPercent, -10, 0.5, -10)
 
 -- ==========================================
@@ -196,7 +198,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ==========================================
--- 🎛️ スライダーのドラッグ処理（100兆対応・9乗カーブ）
+-- 🎛️ スライダーのドラッグ処理（1京対応・12乗カーブ）
 -- ==========================================
 local isDragging = false
 
@@ -207,8 +209,8 @@ local function updateSlider(input)
 	
 	sliderKnob.Position = UDim2.new(percentage, -10, 0.5, -10)
 	
-	-- 9乗カーブを使用（急勾配にして左側の低速制御と右端の100兆を両立）
-	local calculatedSpeed = math.round(MIN_SPEED + (math.pow(percentage, 9) * (MAX_SPEED - MIN_SPEED)))
+	-- 12乗カーブを使用（急勾配にして左側の通常制御と右端の1京を両立）
+	local calculatedSpeed = math.round(MIN_SPEED + (math.pow(percentage, 12) * (MAX_SPEED - MIN_SPEED)))
 	flySpeed = math.clamp(calculatedSpeed, MIN_SPEED, MAX_SPEED)
 	titleLabel.Text = "Fly Speed: " .. formatNumberShort(flySpeed)
 end
