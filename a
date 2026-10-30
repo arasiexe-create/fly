@@ -1,0 +1,222 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local camera = workspace.CurrentCamera
+
+-- 飛行設定用変数
+local isFlying = false
+local flySpeed = 50 -- 初期の飛行速度
+local MIN_SPEED = 1
+local MAX_SPEED = 10000
+
+local bodyGyro, bodyVelocity
+local keysDown = {}
+
+-- ==========================================
+-- 🛠️ GUI の自動作成（パーツ不要・コピペで即生成）
+-- ==========================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "FlyGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- メインの枠
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 300, 0, 130)
+mainFrame.Position = UDim2.new(0, 20, 0.5, -65)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true -- UIをドラッグで移動可能に
+mainFrame.Parent = screenGui
+
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(0, 10)
+uiCorner.Parent = mainFrame
+
+-- 速度表示テキスト
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 35)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Font = Enum.Font.SourceSansBold
+titleLabel.TextSize = 18
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.Text = "Fly Speed: " .. flySpeed
+titleLabel.Parent = mainFrame
+
+-- ON/OFF 切り替えボタン
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 120, 0, 35)
+toggleButton.Position = UDim2.new(0.5, -60, 0, 40)
+toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.TextSize = 14
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Text = "Fly: OFF [F]"
+toggleButton.Parent = mainFrame
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 6)
+btnCorner.Parent = toggleButton
+
+-- スライダーの背景レール
+local sliderBar = Instance.new("Frame")
+sliderBar.Size = UDim2.new(0, 260, 0, 8)
+sliderBar.Position = UDim2.new(0.5, -130, 0, 95)
+sliderBar.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+sliderBar.BorderSizePixel = 0
+sliderBar.Parent = mainFrame
+
+local barCorner = Instance.new("UICorner")
+barCorner.CornerRadius = UDim.new(0, 4)
+barCorner.Parent = sliderBar
+
+-- スライダのつまみ（ノブ）
+local sliderKnob = Instance.new("TextButton")
+sliderKnob.Size = UDim2.new(0, 20, 0, 20)
+sliderKnob.Position = UDim2.new(0, 0, 0.5, -10)
+sliderKnob.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+sliderKnob.Text = ""
+sliderKnob.Parent = sliderBar
+
+local knobCorner = Instance.new("UICorner")
+knobCorner.CornerRadius = UDim.new(1, 0)
+knobCorner.Parent = sliderKnob
+
+-- 初期位置（速度50付近）にノブを合わせる
+local initialPercent = math.pow((flySpeed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 1/3)
+sliderKnob.Position = UDim2.new(initialPercent, -10, 0.5, -10)
+
+-- ==========================================
+-- ✈️ 飛行（Fly）システムの処理
+-- ==========================================
+player.CharacterAdded:Connect(function(newChar)
+	character = newChar
+	if isFlying then
+		isFlying = false
+		toggleButton.Text = "Fly: OFF [F]"
+		toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+	end
+end)
+
+local function toggleFly()
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not root or not humanoid then return end
+
+	isFlying = not isFlying
+
+	if isFlying then
+		toggleButton.Text = "Fly: ON [F]"
+		toggleButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+		humanoid.PlatformStand = true
+
+		bodyGyro = Instance.new("BodyGyro")
+		bodyGyro.P = 9e4
+		bodyGyro.maxTorque = Vector3.new(9e5, 9e5, 9e5)
+		bodyGyro.cframe = root.CFrame
+		bodyGyro.Parent = root
+
+		bodyVelocity = Instance.new("BodyVelocity")
+		bodyVelocity.velocity = Vector3.new(0, 0.1, 0)
+		bodyVelocity.maxForce = Vector3.new(9e5, 9e5, 9e5)
+		bodyVelocity.Parent = root
+	else
+		toggleButton.Text = "Fly: OFF [F]"
+		toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+		humanoid.PlatformStand = false
+
+		if bodyGyro then bodyGyro:Destroy() end
+		if bodyVelocity then bodyVelocity:Destroy() end
+	end
+end
+
+-- ボタンクリックでトグル
+toggleButton.MouseButton1Click:Connect(toggleFly)
+
+-- キーボード入力
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.F then toggleFly() end
+	if input.KeyCode == Enum.KeyCode.W then keysDown.W = true end
+	if input.KeyCode == Enum.KeyCode.S then keysDown.S = true end
+	if input.KeyCode == Enum.KeyCode.A then keysDown.A = true end
+	if input.KeyCode == Enum.KeyCode.D then keysDown.D = true end
+	if input.KeyCode == Enum.KeyCode.Space then keysDown.Space = true end
+	if input.KeyCode == Enum.KeyCode.LeftShift then keysDown.Shift = true end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.W then keysDown.W = false end
+	if input.KeyCode == Enum.KeyCode.S then keysDown.S = false end
+	if input.KeyCode == Enum.KeyCode.A then keysDown.A = false end
+	if input.KeyCode == Enum.KeyCode.D then keysDown.D = false end
+	if input.KeyCode == Enum.KeyCode.Space then keysDown.Space = false end
+	if input.KeyCode == Enum.KeyCode.LeftShift then keysDown.Shift = false end
+end)
+
+-- 毎フレームの飛行移動処理
+RunService.RenderStepped:Connect(function()
+	if not isFlying then return end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root or not bodyGyro or not bodyVelocity then return end
+
+	bodyGyro.cframe = camera.CFrame
+
+	local moveDirection = Vector3.new(0, 0, 0)
+	local camCFrame = camera.CFrame
+
+	if keysDown.W then moveDirection = moveDirection + camCFrame.LookVector end
+	if keysDown.S then moveDirection = moveDirection - camCFrame.LookVector end
+	if keysDown.A then moveDirection = moveDirection - camCFrame.RightVector end
+	if keysDown.D then moveDirection = moveDirection + camCFrame.RightVector end
+	if keysDown.Space then moveDirection = moveDirection + Vector3.new(0, 1, 0) end
+	if keysDown.Shift then moveDirection = moveDirection - Vector3.new(0, 1, 0) end
+
+	if moveDirection.Magnitude > 0 then
+		bodyVelocity.velocity = moveDirection.Unit * flySpeed
+	else
+		bodyVelocity.velocity = Vector3.new(0, 0, 0)
+	end
+end)
+
+-- ==========================================
+-- 🎛️ スライダーのドラッグ処理
+-- ==========================================
+local isDragging = false
+
+local function updateSlider(input)
+	local barSize = sliderBar.AbsoluteSize.X
+	local barPos = sliderBar.AbsolutePosition.X
+	local percentage = math.clamp((input.Position.X - barPos) / barSize, 0, 1)
+	
+	-- つまみの位置変更
+	sliderKnob.Position = UDim2.new(percentage, -10, 0.5, -10)
+	
+	-- 3乗カーブを使用して、左側は細かく（1〜500等）、右端付近で一きに10,000まで上がるように調整
+	local calculatedSpeed = math.round(MIN_SPEED + (math.pow(percentage, 3) * (MAX_SPEED - MIN_SPEED)))
+	
+	flySpeed = math.clamp(calculatedSpeed, MIN_SPEED, MAX_SPEED)
+	titleLabel.Text = "Fly Speed: " .. flySpeed
+end
+
+sliderKnob.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		isDragging = true
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		updateSlider(input)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		isDragging = false
+	end
+end)
