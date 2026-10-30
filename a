@@ -6,45 +6,43 @@ local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local camera = workspace.CurrentCamera
 
--- 飛行設定用変数（最大値1京）
+-- 飛行＆基本設定
 local isFlying = false
 local flySpeed = 50 
 local MIN_SPEED = 1
-local MAX_SPEED = 1000000000000000 -- 1京 (1,000,000,000,000,000)
+local MAX_SPEED = 1000000000000000 -- 1京
 
 local bodyGyro, bodyVelocity
 local keysDown = {}
 
--- 桁数が多いので見やすく略称化する関数 (1Q = 1京, 1T = 1兆)
+-- 🛡️ 連続自動回避（Infinite Emergency TP）設定
+local autoTpActive = false
+local DETECTION_RANGE = 25 -- チーターを検知する距離（スタッド）
+local lastTpTime = 0
+local TP_COOLDOWN = 0.2 -- テレポートの連発クールダウン（秒）をさらに短縮
+
+-- 単位略称化 (1Q = 1京)
 local function formatNumberShort(num)
-	if num >= 1000000000000000 then
-		return string.format("%.2fQ", num / 1000000000000000)
-	elseif num >= 1000000000000 then
-		return string.format("%.2fT", num / 1000000000000)
-	elseif num >= 1000000000 then
-		return string.format("%.2fB", num / 1000000000)
-	elseif num >= 1000000 then
-		return string.format("%.2fM", num / 1000000)
-	elseif num >= 1000 then
-		return string.format("%.1fk", num / 1000)
-	else
-		return tostring(num)
-	end
+	if num >= 1000000000000000 then return string.format("%.2fQ", num / 1000000000000000)
+	elseif num >= 1000000000000 then return string.format("%.2fT", num / 1000000000000)
+	elseif num >= 1000000000 then return string.format("%.2fB", num / 1000000000)
+	elseif num >= 1000000 then return string.format("%.2fM", num / 1000000)
+	elseif num >= 1000 then return string.format("%.1fk", num / 1000)
+	else return tostring(num) end
 end
 
 -- ==========================================
--- 🛠️ GUI の自動作成
+-- 🛠️ GUI の作成
 -- ==========================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "FlyGui"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- メインの枠
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 300, 0, 130)
-mainFrame.Position = UDim2.new(0, 20, 0.5, -65)
-mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.Size = UDim2.new(0, 320, 0, 220)
+mainFrame.Position = UDim2.new(0, 20, 0.5, -110)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.Draggable = true 
@@ -54,107 +52,191 @@ local uiCorner = Instance.new("UICorner")
 uiCorner.CornerRadius = UDim.new(0, 10)
 uiCorner.Parent = mainFrame
 
--- 速度表示テキスト
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0, 35)
+titleLabel.Size = UDim2.new(1, 0, 0, 30)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.TextSize = 18
+titleLabel.TextSize = 16
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.Text = "Fly Speed: " .. formatNumberShort(flySpeed)
+titleLabel.Text = "Fly & Anti-Rage System"
 titleLabel.Parent = mainFrame
 
--- Flyボタン
-local toggleButton = Instance.new("TextButton")
-toggleButton.Size = UDim2.new(0, 120, 0, 35)
-toggleButton.Position = UDim2.new(0.5, -60, 0, 40)
-toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-toggleButton.Font = Enum.Font.SourceSansBold
-toggleButton.TextSize = 14
-toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleButton.Text = "Fly: OFF [F]"
-toggleButton.Parent = mainFrame
-
-local btnCorner = Instance.new("UICorner")
-btnCorner.CornerRadius = UDim.new(0, 6)
-btnCorner.Parent = toggleButton
-
--- スライダー背景
 local sliderBar = Instance.new("Frame")
-sliderBar.Size = UDim2.new(0, 260, 0, 8)
-sliderBar.Position = UDim2.new(0.5, -130, 0, 95)
+sliderBar.Size = UDim2.new(0, 280, 0, 6)
+sliderBar.Position = UDim2.new(0.5, -140, 0, 35)
 sliderBar.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 sliderBar.BorderSizePixel = 0
 sliderBar.Parent = mainFrame
 
-local barCorner = Instance.new("UICorner")
-barCorner.CornerRadius = UDim.new(0, 4)
-barCorner.Parent = sliderBar
-
--- スライダーノブ
 local sliderKnob = Instance.new("TextButton")
-sliderKnob.Size = UDim2.new(0, 20, 0, 20)
-sliderKnob.Position = UDim2.new(0, 0, 0.5, -10)
+sliderKnob.Size = UDim2.new(0, 16, 0, 16)
+sliderKnob.Position = UDim2.new(0, 0, 0.5, -8)
 sliderKnob.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
 sliderKnob.Text = ""
 sliderKnob.Parent = sliderBar
+Instance.new("UICorner", sliderKnob).CornerRadius = UDim.new(1, 0)
 
-local knobCorner = Instance.new("UICorner")
-knobCorner.CornerRadius = UDim.new(1, 0)
-knobCorner.Parent = sliderKnob
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Size = UDim2.new(1, 0, 0, 20)
+speedLabel.Position = UDim2.new(0, 0, 0, 45)
+speedLabel.BackgroundTransparency = 1
+speedLabel.Font = Enum.Font.SourceSans
+speedLabel.TextSize = 14
+speedLabel.TextColor3 = Color3.fromRGB(0, 180, 255)
+speedLabel.Text = "Speed: " .. formatNumberShort(flySpeed)
+speedLabel.Parent = mainFrame
 
--- 初期ノブ位置 (12乗根カーブ)
+local function createButton(text, pos, color)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, 130, 0, 35)
+	btn.Position = pos
+	btn.BackgroundColor3 = color
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 14
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Text = text
+	btn.Parent = mainFrame
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+	return btn
+end
+
+local flyBtn = createButton("Fly: OFF [F]", UDim2.new(0, 20, 0, 80), Color3.fromRGB(200, 50, 50))
+local desyncBtn = createButton("No Clip: OFF", UDim2.new(0, 170, 0, 80), Color3.fromRGB(70, 70, 70))
+-- 🌟 連続自動回避ボタン
+local autoTpBtn = createButton("Inf Evade: OFF", UDim2.new(0, 20, 0, 130), Color3.fromRGB(70, 70, 70))
+
+local infoLabel = Instance.new("TextLabel")
+infoLabel.Size = UDim2.new(1, -40, 0, 40)
+infoLabel.Position = UDim2.new(0, 20, 0, 175)
+infoLabel.BackgroundTransparency = 1
+infoLabel.Font = Enum.Font.SourceSansItalic
+infoLabel.TextSize = 11
+infoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+infoLabel.Text = "※Inf Evade: 敵が近づくたびに、【現在地】を基準にして\nさらに5万〜10万マス離れた別のランダムな高空へ連続TPします"
+infoLabel.Parent = mainFrame
+
 local initialPercent = math.pow((flySpeed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 1/12)
-sliderKnob.Position = UDim2.new(initialPercent, -10, 0.5, -10)
+sliderKnob.Position = UDim2.new(initialPercent, -8, 0.5, -8)
+
+-- ==========================================
+-- 🛡️ 当たり判定の強制遮断 (No Clip)
+-- ==========================================
+local noClipActive = false
+desyncBtn.MouseButton1Click:Connect(function()
+	noClipActive = not noClipActive
+	if noClipActive then
+		desyncBtn.Text = "No Clip: ON"
+		desyncBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+	else
+		desyncBtn.Text = "No Clip: OFF"
+		desyncBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+	end
+end)
+
+RunService.Stepped:Connect(function()
+	if noClipActive and character then
+		for _, part in pairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+			end
+		end
+	end
+end)
+
+-- ==========================================
+-- 🎯 【改良】現在地基準の連続ランダムテレポート
+-- ==========================================
+autoTpBtn.MouseButton1Click:Connect(function()
+	autoTpActive = not autoTpActive
+	if autoTpActive then
+		autoTpBtn.Text = "Inf Evade: ON"
+		autoTpBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 230) -- 紫（エンドレスモード）
+	else
+		autoTpBtn.Text = "Inf Evade: OFF"
+		autoTpBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+	end
+end)
+
+local randomObj = Random.new()
+RunService.Heartbeat:Connect(function()
+	if not autoTpActive or not character then return end
+	local myRoot = character:FindFirstChild("HumanoidRootPart")
+	if not myRoot then return end
+	
+	local now = tick()
+	if now - lastTpTime < TP_COOLDOWN then return end
+	
+	local isThreatNearby = false
+	
+	-- 周囲の全プレイヤーを走査
+	for _, p in pairs(Players:GetPlayers()) do
+		if p ~= player and p.Character then
+			local enemyRoot = p.Character:FindFirstChild("HumanoidRootPart")
+			if enemyRoot then
+				local distance = (myRoot.Position - enemyRoot.Position).Magnitude
+				if distance <= DETECTION_RANGE then
+					isThreatNearby = true
+					break
+				end
+			end
+		end
+	end
+	
+	-- 接近を検知したら【現在の位置】からさらに別の方向へジャンプ
+	if isThreatNearby then
+		lastTpTime = now
+		
+		-- 現在の座標を取得
+		local currentPos = myRoot.Position
+		
+		-- 現在地を基準（センター）にして、そこからランダムに5万〜10万マス離す計算
+		local signX = randomObj:NextInteger(1, 2) == 1 and 1 or -1
+		local signZ = randomObj:NextInteger(1, 2) == 1 and 1 or -1
+		
+		local rx = randomObj:NextNumber(50000, 100000) * signX
+		local ry = randomObj:NextNumber(10000, 50000) -- 高空へ逃げる（累積しすぎを防ぐため適度な高さをキープ）
+		local rz = randomObj:NextNumber(50000, 100000) * signZ
+		
+		-- 新しい退避座標を上書き
+		myRoot.CFrame = CFrame.new(currentPos.X + rx, math.clamp(currentPos.Y + ry, 20000, 400000), currentPos.Z + rz)
+		print("[Inf Evade] 追従を検知。現在地からさらに遠方へ再ジャンプしました。")
+	end
+end)
 
 -- ==========================================
 -- ✈️ 飛行（Fly）処理
 -- ==========================================
-player.CharacterAdded:Connect(function(newChar)
-	character = newChar
-	if isFlying then
-		isFlying = false
-		toggleButton.Text = "Fly: OFF [F]"
-		toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-	end
-end)
-
 local function toggleFly()
 	local root = character:FindFirstChild("HumanoidRootPart")
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not root or not humanoid then return end
-
 	isFlying = not isFlying
-
 	if isFlying then
-		toggleButton.Text = "Fly: ON [F]"
-		toggleButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+		flyBtn.Text = "Fly: ON [F]"
+		flyBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
 		humanoid.PlatformStand = true
-
 		bodyGyro = Instance.new("BodyGyro")
 		bodyGyro.P = 9e4
 		bodyGyro.maxTorque = Vector3.new(9e5, 9e5, 9e5)
 		bodyGyro.cframe = root.CFrame
 		bodyGyro.Parent = root
-
 		bodyVelocity = Instance.new("BodyVelocity")
 		bodyVelocity.velocity = Vector3.new(0, 0.1, 0)
 		bodyVelocity.maxForce = Vector3.new(9e5, 9e5, 9e5)
 		bodyVelocity.Parent = root
 	else
-		toggleButton.Text = "Fly: OFF [F]"
-		toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+		flyBtn.Text = "Fly: OFF [F]"
+		flyBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 		humanoid.PlatformStand = false
-
 		if bodyGyro then bodyGyro:Destroy() end
 		if bodyVelocity then bodyVelocity:Destroy() end
 	end
 end
 
-toggleButton.MouseButton1Click:Connect(toggleFly)
+flyBtn.MouseButton1Click:Connect(toggleFly)
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
 	if input.KeyCode == Enum.KeyCode.F then toggleFly() end
 	if input.KeyCode == Enum.KeyCode.W then keysDown.W = true end
 	if input.KeyCode == Enum.KeyCode.S then keysDown.S = true end
@@ -177,58 +259,33 @@ RunService.RenderStepped:Connect(function()
 	if not isFlying then return end
 	local root = character:FindFirstChild("HumanoidRootPart")
 	if not root or not bodyGyro or not bodyVelocity then return end
-
 	bodyGyro.cframe = camera.CFrame
-
 	local moveDirection = Vector3.new(0, 0, 0)
 	local camCFrame = camera.CFrame
-
 	if keysDown.W then moveDirection = moveDirection + camCFrame.LookVector end
 	if keysDown.S then moveDirection = moveDirection - camCFrame.LookVector end
 	if keysDown.A then moveDirection = moveDirection - camCFrame.RightVector end
 	if keysDown.D then moveDirection = moveDirection + camCFrame.RightVector end
 	if keysDown.Space then moveDirection = moveDirection + Vector3.new(0, 1, 0) end
 	if keysDown.Shift then moveDirection = moveDirection - Vector3.new(0, 1, 0) end
-
-	if moveDirection.Magnitude > 0 then
-		bodyVelocity.velocity = moveDirection.Unit * flySpeed
-	else
-		bodyVelocity.velocity = Vector3.new(0, 0, 0)
-	end
+	if moveDirection.Magnitude > 0 then bodyVelocity.velocity = moveDirection.Unit * flySpeed else bodyVelocity.velocity = Vector3.new(0, 0, 0) end
 end)
 
--- ==========================================
--- 🎛️ スライダーのドラッグ処理（1京対応・12乗カーブ）
--- ==========================================
+-- スライダー処理
 local isDragging = false
-
 local function updateSlider(input)
-	local barSize = sliderBar.AbsoluteSize.X
-	local barPos = sliderBar.AbsolutePosition.X
-	local percentage = math.clamp((input.Position.X - barPos) / barSize, 0, 1)
-	
-	sliderKnob.Position = UDim2.new(percentage, -10, 0.5, -10)
-	
-	-- 12乗カーブを使用（急勾配にして左側の通常制御と右端の1京を両立）
-	local calculatedSpeed = math.round(MIN_SPEED + (math.pow(percentage, 12) * (MAX_SPEED - MIN_SPEED)))
-	flySpeed = math.clamp(calculatedSpeed, MIN_SPEED, MAX_SPEED)
-	titleLabel.Text = "Fly Speed: " .. formatNumberShort(flySpeed)
+local percentage = math.clamp((input.Position.X - sliderBar.AbsolutePosition.X) / sliderBar.AbsoluteSize.X, 0, 1)
+sliderKnob.Position = UDim2.new(percentage, -8, 0.5, -8)
+local calculatedSpeed = math.round(MIN_SPEED + (math.pow(percentage, 12) * (MAX_SPEED - MIN_SPEED)))
+flySpeed = math.clamp(calculatedSpeed, MIN_SPEED, MAX_SPEED)
+speedLabel.Text = "Speed: " .. formatNumberShort(flySpeed)
 end
-
-sliderKnob.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		isDragging = true
-	end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-	if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-		updateSlider(input)
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		isDragging = false
-	end
+sliderKnob.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDragging = true end end)
+UserInputService.InputChanged:Connect(function(input) if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then updateSlider(input) end end)
+UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then isDragging = false end end)
+player.CharacterAdded:Connect(function(newChar)
+character = newChar isFlying = false autoTpActive = false noClipActive = false
+flyBtn.Text = "Fly: OFF [F]" flyBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+desyncBtn.Text = "No Clip: OFF" desyncBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+autoTpBtn.Text = "Inf Evade: OFF" autoTpBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
 end)
