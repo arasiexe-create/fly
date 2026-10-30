@@ -6,45 +6,20 @@ local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local camera = workspace.CurrentCamera
 
--- 飛行設定用変数（最大値を1億に変更）
+-- 飛行設定
 local isFlying = false
 local flySpeed = 50 
 local MIN_SPEED = 1
-local MAX_SPEED = 100000000 -- 1億 (100,000,000)
+local MAX_SPEED = 100000000 -- 1億
 
 local bodyGyro, bodyVelocity
 local keysDown = {}
 
--- ==========================================
--- 🛠️ GUI の自動作成
--- ==========================================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "FlyGui"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = player:WaitForChild("PlayerGui")
+-- 🛡️ Ragebot対策用変数
+local antiRageActive = false
+local ghostParts = {}
 
--- メインの枠
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 320, 0, 130)
-mainFrame.Position = UDim2.new(0, 20, 0.5, -65)
-mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-mainFrame.BorderSizePixel = 0
-mainFrame.Active = true
-mainFrame.Draggable = true 
-mainFrame.Parent = screenGui
-
-local uiCorner = Instance.new("UICorner")
-uiCorner.CornerRadius = UDim.new(0, 10)
-uiCorner.Parent = mainFrame
-
--- 速度表示テキスト（桁数が多いため、カンマ区切りで表示されるようにします）
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0, 35)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.TextSize = 16
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-
+-- カンマ区切りフォーマット
 local function formatNumber(num)
 	local formatted = tostring(num)
 	while true do  
@@ -55,13 +30,41 @@ local function formatNumber(num)
 	return formatted
 end
 
+-- ==========================================
+-- 🛠️ GUI の作成（対策ボタンを追加）
+-- ==========================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "FlyGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 320, 0, 175) -- 対策ボタン用に縦幅を少し拡張
+mainFrame.Position = UDim2.new(0, 20, 0.5, -87)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true 
+mainFrame.Parent = screenGui
+
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(0, 10)
+uiCorner.Parent = mainFrame
+
+-- 速度表示
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 35)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Font = Enum.Font.SourceSansBold
+titleLabel.TextSize = 16
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.Text = "Fly Speed: " .. formatNumber(flySpeed)
 titleLabel.Parent = mainFrame
 
--- ON/OFF 切り替えボタン
+-- Flyボタン
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.new(0, 120, 0, 35)
-toggleButton.Position = UDim2.new(0.5, -60, 0, 40)
+toggleButton.Position = UDim2.new(0, 30, 0, 40) -- 左寄せに調整
 toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 toggleButton.Font = Enum.Font.SourceSansBold
 toggleButton.TextSize = 14
@@ -73,7 +76,22 @@ local btnCorner = Instance.new("UICorner")
 btnCorner.CornerRadius = UDim.new(0, 6)
 btnCorner.Parent = toggleButton
 
--- スライダーの背景レール
+-- 🛡️ Anti-Rage（対チーター用無敵・透過化）ボタン
+local antiRageButton = Instance.new("TextButton")
+antiRageButton.Size = UDim2.new(0, 120, 0, 35)
+antiRageButton.Position = UDim2.new(0, 170, 0, 40) -- 右寄せに設置
+antiRageButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70) -- 初期はグレー
+antiRageButton.Font = Enum.Font.SourceSansBold
+antiRageButton.TextSize = 13
+antiRageButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+antiRageButton.Text = "Anti-Rage: OFF"
+antiRageButton.Parent = mainFrame
+
+local arCorner = Instance.new("UICorner")
+arCorner.CornerRadius = UDim.new(0, 6)
+arCorner.Parent = antiRageButton
+
+-- スライダー
 local sliderBar = Instance.new("Frame")
 sliderBar.Size = UDim2.new(0, 280, 0, 8)
 sliderBar.Position = UDim2.new(0.5, -140, 0, 95)
@@ -85,7 +103,6 @@ local barCorner = Instance.new("UICorner")
 barCorner.CornerRadius = UDim.new(0, 4)
 barCorner.Parent = sliderBar
 
--- スライダのつまみ（ノブ）
 local sliderKnob = Instance.new("TextButton")
 sliderKnob.Size = UDim2.new(0, 20, 0, 20)
 sliderKnob.Position = UDim2.new(0, 0, 0.5, -10)
@@ -97,20 +114,82 @@ local knobCorner = Instance.new("UICorner")
 knobCorner.CornerRadius = UDim.new(1, 0)
 knobCorner.Parent = sliderKnob
 
--- 初期位置設定（5乗根カーブに合わせてノブを配置）
+-- 説明テキストを追加
+local descLabel = Instance.new("TextLabel")
+descLabel.Size = UDim2.new(1, 0, 0, 40)
+descLabel.Position = UDim2.new(0, 0, 0, 125)
+descLabel.BackgroundTransparency = 1
+descLabel.Font = Enum.Font.SourceSans
+descLabel.TextSize = 12
+descLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+descLabel.Text = "Anti-Rage有効時: 当たり判定を完全に消失 (半透明)\n相手の自動エイムや範囲攻撃が当たらなくなります"
+descLabel.Parent = mainFrame
+
 local initialPercent = math.pow((flySpeed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 1/5)
 sliderKnob.Position = UDim2.new(initialPercent, -10, 0.5, -10)
 
 -- ==========================================
--- ✈️ 飛行（Fly）システムの処理
+-- 🛡️ Anti-Rage (防衛ロジック)
+-- ==========================================
+local function setAntiRage(state)
+	antiRageActive = state
+	if not character then return end
+	
+	if antiRageActive then
+		antiRageButton.Text = "Anti-Rage: ACTIVE"
+		antiRageButton.BackgroundColor3 = Color3.fromRGB(218, 145, 0) -- オレンジ（警告色）
+		
+		-- キャラクターの全パーツをすり抜け（CanCollide=false）にし、半透明にする
+		for _, v in pairs(character:GetDescendants()) do
+			if v:IsA("BasePart") then
+				ghostParts[v] = {v.CanCollide, v.LocalTransparencyModifier}
+				v.CanCollide = false
+				-- 自分の画面では半透明に
+				v.LocalTransparencyModifier = 0.6
+			end
+		end
+	else
+		antiRageButton.Text = "Anti-Rage: OFF"
+		antiRageButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+		
+		-- 元の状態に戻す
+		for part, original in pairs(ghostParts) do
+			if part and part.Parent then
+				part.CanCollide = original[1]
+				part.LocalTransparencyModifier = original[2]
+			end
+		end
+		table.clear(ghostParts)
+	end
+end
+
+antiRageButton.MouseButton1Click:Connect(function()
+	setAntiRage(not antiRageActive)
+end)
+
+-- 毎フレーム当たり判定を強制遮断（Ragebotによる位置同期や接触を拒否）
+RunService.Stepped:Connect(function()
+	if antiRageActive and character then
+		for _, v in pairs(character:GetDescendants()) do
+			if v:IsA("BasePart") then
+				v.CanCollide = false
+			end
+		end
+	end
+end)
+
+-- ==========================================
+-- ✈️ 飛行（Fly）処理
 -- ==========================================
 player.CharacterAdded:Connect(function(newChar)
 	character = newChar
-	if isFlying then
-		isFlying = false
-		toggleButton.Text = "Fly: OFF [F]"
-		toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-	end
+	isFlying = false
+	antiRageActive = false
+	table.clear(ghostParts)
+	toggleButton.Text = "Fly: OFF [F]"
+	toggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+	antiRageButton.Text = "Anti-Rage: OFF"
+	antiRageButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
 end)
 
 local function toggleFly()
@@ -192,7 +271,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ==========================================
--- 🎛️ スライダーのドラッグ処理（1億対応版）
+-- 🎛️ スライダーのドラッグ処理
 -- ==========================================
 local isDragging = false
 
@@ -203,10 +282,7 @@ local function updateSlider(input)
 	
 	sliderKnob.Position = UDim2.new(percentage, -10, 0.5, -10)
 	
-	-- 5乗のカーブ（math.pow(percentage, 5)）を使用
-	-- これにより、スライダーの半分(0.5)の位置でも低速〜中速（約310万）に抑え、右端に近づくと一気に1億まで爆破加速します
 	local calculatedSpeed = math.round(MIN_SPEED + (math.pow(percentage, 5) * (MAX_SPEED - MIN_SPEED)))
-	
 	flySpeed = math.clamp(calculatedSpeed, MIN_SPEED, MAX_SPEED)
 	titleLabel.Text = "Fly Speed: " .. formatNumber(flySpeed)
 end
@@ -224,7 +300,7 @@ UserInputService.InputChanged:Connect(function(input)
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		isDragging = false
-	end
+if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+isDragging = false
+end
 end)
