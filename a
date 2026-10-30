@@ -6,17 +6,17 @@ local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local camera = workspace.CurrentCamera
 
--- 飛行設定用変数
+-- 飛行設定用変数（最大値を1億に変更）
 local isFlying = false
-local flySpeed = 50 -- 初期の飛行速度
+local flySpeed = 50 
 local MIN_SPEED = 1
-local MAX_SPEED = 10000
+local MAX_SPEED = 100000000 -- 1億 (100,000,000)
 
 local bodyGyro, bodyVelocity
 local keysDown = {}
 
 -- ==========================================
--- 🛠️ GUI の自動作成（パーツ不要・コピペで即生成）
+-- 🛠️ GUI の自動作成
 -- ==========================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "FlyGui"
@@ -25,26 +25,37 @@ screenGui.Parent = player:WaitForChild("PlayerGui")
 
 -- メインの枠
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 300, 0, 130)
+mainFrame.Size = UDim2.new(0, 320, 0, 130)
 mainFrame.Position = UDim2.new(0, 20, 0.5, -65)
 mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
-mainFrame.Draggable = true -- UIをドラッグで移動可能に
+mainFrame.Draggable = true 
 mainFrame.Parent = screenGui
 
 local uiCorner = Instance.new("UICorner")
 uiCorner.CornerRadius = UDim.new(0, 10)
 uiCorner.Parent = mainFrame
 
--- 速度表示テキスト
+-- 速度表示テキスト（桁数が多いため、カンマ区切りで表示されるようにします）
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, 0, 0, 35)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.TextSize = 18
+titleLabel.TextSize = 16
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.Text = "Fly Speed: " .. flySpeed
+
+local function formatNumber(num)
+	local formatted = tostring(num)
+	while true do  
+		local k
+		formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
+		if k == 0 then break end
+	end
+	return formatted
+end
+
+titleLabel.Text = "Fly Speed: " .. formatNumber(flySpeed)
 titleLabel.Parent = mainFrame
 
 -- ON/OFF 切り替えボタン
@@ -64,8 +75,8 @@ btnCorner.Parent = toggleButton
 
 -- スライダーの背景レール
 local sliderBar = Instance.new("Frame")
-sliderBar.Size = UDim2.new(0, 260, 0, 8)
-sliderBar.Position = UDim2.new(0.5, -130, 0, 95)
+sliderBar.Size = UDim2.new(0, 280, 0, 8)
+sliderBar.Position = UDim2.new(0.5, -140, 0, 95)
 sliderBar.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 sliderBar.BorderSizePixel = 0
 sliderBar.Parent = mainFrame
@@ -86,8 +97,8 @@ local knobCorner = Instance.new("UICorner")
 knobCorner.CornerRadius = UDim.new(1, 0)
 knobCorner.Parent = sliderKnob
 
--- 初期位置（速度50付近）にノブを合わせる
-local initialPercent = math.pow((flySpeed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 1/3)
+-- 初期位置設定（5乗根カーブに合わせてノブを配置）
+local initialPercent = math.pow((flySpeed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED), 1/5)
 sliderKnob.Position = UDim2.new(initialPercent, -10, 0.5, -10)
 
 -- ==========================================
@@ -134,10 +145,8 @@ local function toggleFly()
 	end
 end
 
--- ボタンクリックでトグル
 toggleButton.MouseButton1Click:Connect(toggleFly)
 
--- キーボード入力
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if input.KeyCode == Enum.KeyCode.F then toggleFly() end
@@ -158,7 +167,6 @@ UserInputService.InputEnded:Connect(function(input)
 	if input.KeyCode == Enum.KeyCode.LeftShift then keysDown.Shift = false end
 end)
 
--- 毎フレームの飛行移動処理
 RunService.RenderStepped:Connect(function()
 	if not isFlying then return end
 	local root = character:FindFirstChild("HumanoidRootPart")
@@ -184,7 +192,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ==========================================
--- 🎛️ スライダーのドラッグ処理
+-- 🎛️ スライダーのドラッグ処理（1億対応版）
 -- ==========================================
 local isDragging = false
 
@@ -193,14 +201,14 @@ local function updateSlider(input)
 	local barPos = sliderBar.AbsolutePosition.X
 	local percentage = math.clamp((input.Position.X - barPos) / barSize, 0, 1)
 	
-	-- つまみの位置変更
 	sliderKnob.Position = UDim2.new(percentage, -10, 0.5, -10)
 	
-	-- 3乗カーブを使用して、左側は細かく（1〜500等）、右端付近で一きに10,000まで上がるように調整
-	local calculatedSpeed = math.round(MIN_SPEED + (math.pow(percentage, 3) * (MAX_SPEED - MIN_SPEED)))
+	-- 5乗のカーブ（math.pow(percentage, 5)）を使用
+	-- これにより、スライダーの半分(0.5)の位置でも低速〜中速（約310万）に抑え、右端に近づくと一気に1億まで爆破加速します
+	local calculatedSpeed = math.round(MIN_SPEED + (math.pow(percentage, 5) * (MAX_SPEED - MIN_SPEED)))
 	
 	flySpeed = math.clamp(calculatedSpeed, MIN_SPEED, MAX_SPEED)
-	titleLabel.Text = "Fly Speed: " .. flySpeed
+	titleLabel.Text = "Fly Speed: " .. formatNumber(flySpeed)
 end
 
 sliderKnob.InputBegan:Connect(function(input)
